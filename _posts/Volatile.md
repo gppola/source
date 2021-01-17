@@ -1,7 +1,7 @@
 ---
 title: Volatile
 date: 2020-06-15 16:09:52
-tags: 
+tags: JVM
 ---
 
 # Java

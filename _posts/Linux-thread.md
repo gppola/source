@@ -15,82 +15,74 @@ tags: Linux
 
 # do_fork
 
-	do_fork -> copy_process -> copy_mm -> dup_mmap
+![](/images/linux_thread/mm_copy.png)
+https://elixir.bootlin.com/linux/latest/source/kernel/fork.c
+https://cloud.tencent.com/developer/article/1690373
+```
+do_fork:
+  copy_process:
+ 	dup_task_struct
+	copy_mm: 
+	  if (clone_flags & CLONE_VM) { // 检查clone_flags中是否有CLONE_VM标志，若有，两个进程之间共享VM，即就是创建轻量级进程(线程)
+		mmget(oldmm);
+		mm = oldmm;
+		goto good_mm;
+	  }
+	  dup_mm: // 新进程
+		mm = allocate_mm(); // 分配一个新的内存描述符。把它的地址存放在新进程的mm中
+		memcpy(mm, oldmm, sizeof(*mm)); // 并从当前进程复制mm的内容
+		mm_init:
+		  mm_alloc_pgd // 函数会调用pgd_alloc()会为该进程分配一页(4K)的页全局目录的线性地址并保存在 task_struct->mm_struct->pgd中
+		/**
+		 * dup_mmap不但复制了线性区和页表，也设置了mm的一些属性.
+		 * 它也会改变父进程的私有，可写的页为只读的，以使写时复制机制生效。
+		 */
+		dup_mmap: 
+			for (mpnt = oldmm->mmap; mpnt; mpnt = mpnt->vm_next){
+				tmp = vm_area_dup(mpnt);
+				if (!(tmp->vm_flags & VM_WIPEONFORK))
+					retval = copy_page_range(mm, oldmm, mpnt, tmp);
+			}
+
+struct vm_area_struct *vm_area_dup(struct vm_area_struct *orig)
+{
+	struct vm_area_struct *new = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
+
+	if (new) {
+		ASSERT_EXCLUSIVE_WRITER(orig->vm_flags);
+		ASSERT_EXCLUSIVE_WRITER(orig->vm_file);
+		/*
+		 * orig->shared.rb may be modified concurrently, but the clone
+		 * will be reinitialized.
+		 */
+		*new = data_race(*orig);
+		INIT_LIST_HEAD(&new->anon_vma_chain);
+		new->vm_next = new->vm_prev = NULL;
+	}
+	return new;
+}
+
+copy_page_range:
+	unsigned long addr = vma->vm_start;
+	unsigned long end = vma->vm_end;
+	dst_pgd = pgd_offset(dst_mm, addr);
+	src_pgd = pgd_offset(src_mm, addr);
+	do {
+		next = pgd_addr_end(addr, end); // 页全局目录下一条
+		if (pgd_none_or_clear_bad(src_pgd))
+			continue;
+		if (unlikely(copy_p4d_range(dst_mm, src_mm, dst_pgd, src_pgd,
+					    vma, new, addr, next))) {
+			ret = -ENOMEM;
+			break;
+		}
+	} while (dst_pgd++, src_pgd++, addr = next, addr != end);
+```
 
 copy_process函数中首先调用dup_task_struct()函数为子进程创建task_struct结构体等信息，然后根据clone_flags集合中的标志值，设置共享或者复制父进程打开的文件、文件系统信息、信号处理函数、进程地址空间、命名空间等资源，其中copy_mm函数实现父进程地址空间的拷贝，也就是fork创建子进程时的写时复制机制的核心处了，接下来看看这个函数的实现。
 
 copy_mm()中检查clone_flags中是否有CLONE_VM标志，
 - 若有，两个进程之间共享VM，即就是创建轻量级进程(线程)，
-
-```	
-/**
- * 当创建一个新的进程时，内核调用copy_mm函数，
- * 这个函数通过建立新进程的所有页表和内存描述符来创建进程的地址空间。
- * 通常，每个进程都有自己的地址空间，但是轻量级进程共享同一地址空间，即允许它们对同一组页进行寻址。
- */
-static int copy_mm(unsigned long clone_flags, struct task_struct * tsk) 
-{
-	...
-	/**
-	 * 指定了CLONE_VM标志，表示创建线程。
-	 */
-	if (clone_flags & CLONE_VM) {
-		/**
-		 * 新线程共享父进程的地址空间，所以需要将mm_users加一。
-		 */
-		atomic_inc(&oldmm->mm_users);
-		mm = oldmm;
-		...
-	}
-	/**
-	 * 没有CLONE_VM标志，就必须创建一个新的地址空间。
-	 * 必须要有地址空间，即使此时并没有分配内存。
-	 */
-	retval = -ENOMEM;
-	/**
-	 * 分配一个新的内存描述符。把它的地址存放在新进程的mm中。
-	 */
-	mm = allocate_mm();
-	...
-	/* Copy the current MM stuff.. */
-	/**
-	 * 并从当前进程复制mm的内容。
-	 */
-	memcpy(mm, oldmm, sizeof(*mm));
-	...
-	/**
-	 * dup_mmap不但复制了线性区和页表，也设置了mm的一些属性.
-	 * 它也会改变父进程的私有，可写的页为只读的，以使写时复制机制生效。
-	 */
-	retval = dup_mmap(mm, oldmm);
-	...
-}
-```
-
-```
-/**
- * 既复制父进程的线性区，也复制它的页表。
- */
-static inline int dup_mmap(struct mm_struct * mm, struct mm_struct * oldmm) {
-	...
-
-	/**
-	 * 复制父进程的每一个vm_area_struct线性区描述符，并把复制品插入到子进程的线性区链表和红黑树中。
-	 */
-	for (mpnt = current->mm->mmap ; mpnt ; mpnt = mpnt->vm_next) {
-		...
-		/**
-		 * copy_page_range创建必要的页表来映射线性区所包含的一组页。并且初始化新页表的表项。
-		 * 对私有、可写的页（无VM_SHARED标志，有VM_MAYWRITE标志），对父子进程都标记为只读的。
-		 * 为写时复制进行处理。
-		 */
-		retval = copy_page_range(mm, current->mm, tmp);
-		...
-	}
-	...
-}
-```
-
 - 否则，就是fork创建进程，从而调用dup_mm()函数为子进程分配一个新的mm_struct结构体。
 
 	- 使用dup_mmap()函数为子进程拷贝父进程地址空间，其中调用copy_page_range()函数进行页表的拷贝，由于linux中采用四级分页机制，分别是pgd、pud、pmd、pte，因而依次对其进行拷贝，最终在拷贝pte的函数copy_pte_range中调用copy_one_page函数实现真正的写时复制。
@@ -186,9 +178,23 @@ cpu_unbind: ![cpu_unbind](/images/linux_thread/cpu_unbind.png)
 
 #  Q&A
 
+- 为什么要多级页表
+
+	- 因为操作系统是可以同时运行非常多的进程的，那这不就意味着页表会非常的庞大。在 32 位的环境下，虚拟地址空间共有 4GB，假设一个页的大小是 4KB（2^12），那么就需要大约 100 万 （2^20） 个页，每个「页表项」需要 4 个字节大小来存储，那么整个 4GB 空间的映射就需要有 4MB 的内存来存储页表。这 4MB 大小的页表，看起来也不是很大。但是要知道每个进程都是有自己的虚拟地址空间的，也就说都有自己的页表。那么，100 个进程的话，就需要 400MB 的内存来存储页表，这是非常大的内存了，更别说 64 位的环境了。如果使用了二级分页，一级页表就可以覆盖整个4GB 虚拟地址空间，但如果某个一级页表的页表项没有被用到，也就不需要创建这个页表项对应的二级页表了，即可以在需要时才创建二级页表。
+
+	- 这对比单级页表的 4MB 是不是一个巨大的节约？那么为什么不分级的页表就做不到这样节约内存呢？**我们从页表的性质来看，保存在内存中的页表承担的职责是将虚拟地址翻译成物理地址。假如虚拟地址在页表中找不到对应的页表项，计算机系统就不能工作了。所以页表一定要覆盖全部虚拟地址空间，不分级的页表就需要有 100 多万个页表项来映射，而二级分页则只需要 1024 个页表项（此时一级页表覆盖到了全部虚拟地址空间，二级页表在需要时创建）**我们把二级分页再推广到多级页表，就会发现页表占用的内存空间更少了，这一切都要归功于对局部性原理的充分应用。对于 64 位的系统，两级分页肯定不够了，就变成了四级目录，分别是：
+		- 全局页目录项 PGD（Page Global Directory）
+		- 上层页目录项 PUD（Page Upper Directory）
+		- 中间页目录项 PMD（Page Middle Directory）
+		- 页表项 PTE（Page Table Entry）
+
+- MMU 和 页表
+
+Each process a pointer (mm_struct→pgd) to its own Page Global Directory (PGD) which is a physical page frame. This frame contains an array of type pgd_t which is an architecture specific type defined in <asm/page.h>. The page tables are loaded differently depending on the architecture. On the x86, the process page table is loaded by copying mm_struct→pgd into the cr3 register which has the side effect of flushing the TLB. In fact this is how the function __flush_tlb() is implemented in the architecture dependent code.
 - 所有线程共享主线程的虚拟地址空间(current->mm指向同一个地址)，那线程栈是共享的吗？
 不是，调用clone的时候需要自己提供子task的栈空间
- 
+
+
 ```
 /**
  * 负责处理clone,fork,vfork系统调用。

@@ -1,7 +1,7 @@
 ---
 title: web security
 date: 2020-06-15 17:05:45
-tags: web
+tags: Web
 ---
 
 # 同源协议（SOP)
