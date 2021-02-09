@@ -1,7 +1,7 @@
 ---
 title: vim/tmux/nvim 配置
 date: 2020-08-30 09:20:30
-tags: 
+tags: Linux
 
 ---
 
