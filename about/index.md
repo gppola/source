@@ -23,8 +23,3 @@ Love algorithm and security.
 - Silver medal in China Collegiate Programming Contest Finals, 2016
 - Silver medal in China Collegiate Programming Contest Nanyang Site, 2016
 - National Scholarship, 2014 – 2015
-
-# Contact
-- [Linkedin](https://www.linkedin.com/in/kai-chen-a27100122)
-- [Github](https://github.com/szfck)
-- [Email](mailto:kchen9530@126.com)
