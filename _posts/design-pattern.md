@@ -1,7 +1,7 @@
 ---
 title: 设计模式
 date: 2020-10-10 10:29:35
-tags:
+tags: JVM
 ---
 
 # GOF: group of four 四人帮, 国外大牛总结出23种套路。
