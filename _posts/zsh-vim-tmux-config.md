@@ -12,6 +12,8 @@ set nu
 set backspace=2
 set foldmethod=syntax
 set foldclose=all
+set ignorecase
+set smartcase
 
 syntax on
 

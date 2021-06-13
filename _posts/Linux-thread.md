@@ -8,6 +8,10 @@ tags: Linux
 
 一个进程的虚拟地址空间主要由两个数据结构来描述。一个是最高层次的：mm_struct（定义在mm_types.h中），一个是较高层次的：vm_area_structs。最高层次的mm_struct结构描述了一个进程的整个虚拟地址空间。较高层次的结构vm_area_truct描述了虚拟地址空间的一个区间（简称虚拟区或线性区）。每个进程只有一个mm_struct结构，在每个进程的task_struct结构中，有一个指向该进程的结构。可以说，mm_struct结构是对整个用户空间（注意，是用户空间）的描述。
 
+在linux系统里，进程和线程都是通过task_struct结构体来描述。Linux系统 对线程和进程并不特别区分。线程仅仅被视为一个与其他线程共享某些资源的进程。每个线程都拥有唯一自己的task_struct。
+
+
+
 ![](/images/linux_thread/pcb.png)
 
 ![](/images/linux_thread/mm.png)
@@ -22,7 +26,7 @@ https://cloud.tencent.com/developer/article/1690373
 do_fork:
   copy_process:
  	dup_task_struct
-	copy_mm: 
+	copy_mm:
 	  if (clone_flags & CLONE_VM) { // 检查clone_flags中是否有CLONE_VM标志，若有，两个进程之间共享VM，即就是创建轻量级进程(线程)
 		mmget(oldmm);
 		mm = oldmm;
@@ -37,7 +41,7 @@ do_fork:
 		 * dup_mmap不但复制了线性区和页表，也设置了mm的一些属性.
 		 * 它也会改变父进程的私有，可写的页为只读的，以使写时复制机制生效。
 		 */
-		dup_mmap: 
+		dup_mmap:
 			for (mpnt = oldmm->mmap; mpnt; mpnt = mpnt->vm_next){
 				tmp = vm_area_dup(mpnt);
 				if (!(tmp->vm_flags & VM_WIPEONFORK))
@@ -194,6 +198,7 @@ Each process a pointer (mm_struct→pgd) to its own Page Global Directory (PGD) 
 - 所有线程共享主线程的虚拟地址空间(current->mm指向同一个地址)，那线程栈是共享的吗？
 不是，调用clone的时候需要自己提供子task的栈空间
 
+threads share all segments except the stack. Threads have independent call stacks, however the memory in other thread stacks is still accessible and in theory you could hold a pointer to memory in some other thread's local stack frame
 
 ```
 /**
