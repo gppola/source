@@ -16,6 +16,7 @@ tags: Linux
 
 ![](/images/linux_thread/mm.png)
 
+![](/images/linux_thread/process_whiteboard.png)
 
 # do_fork
 
