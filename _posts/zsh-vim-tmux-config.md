@@ -10,8 +10,6 @@ tags: Linux
 set nocompatible              " be iMproved, required
 set nu
 set backspace=2
-set foldmethod=syntax
-set foldclose=all
 set ignorecase
 set smartcase
 
@@ -77,6 +75,12 @@ install zsh, oh-my-zsh
 
 use custom theme `powerlevel9k/powerlevel9k`
 https://github.com/Powerlevel9k/powerlevel9k/wiki/Install-Instructions#arch-linux
+
+install plugin
+````
+git clone git://github.com/zsh-users/zsh-syntax-highlighting $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
+git clone git://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
+```
 
 加入插件 ~/.zshrc
 ```
